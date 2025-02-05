@@ -1,4 +1,4 @@
-module github.com/jeffallen/seekinghttp
+module github.com/bulatorr/seekinghttp
 
 go 1.18
 

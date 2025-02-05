@@ -22,17 +22,19 @@ type Logger interface {
 // SeekingHTTP uses a series of HTTP GETs with Range headers
 // to implement io.ReadSeeker and io.ReaderAt.
 type SeekingHTTP struct {
-	URL        string
-	Client     HttpClient
-	url        *url.URL
-	offset     int64
-	last       *bytes.Buffer
-	lastOffset int64
-	Logger     Logger
+	URL         string
+	Client      HttpClient
+	constoffset int64
+	constsize   int64
+	url         *url.URL
+	offset      int64
+	last        *bytes.Buffer
+	lastOffset  int64
+	Logger      Logger
 }
 
 // Compile-time check of interface implementations.
-var _ io.ReadSeeker = (*SeekingHTTP)(nil)
+var _ io.ReadSeekCloser = (*SeekingHTTP)(nil)
 var _ io.ReaderAt = (*SeekingHTTP)(nil)
 
 // New initializes a SeekingHTTP for the given URL.
@@ -40,8 +42,22 @@ var _ io.ReaderAt = (*SeekingHTTP)(nil)
 // to Read or Seek.
 func New(url string) *SeekingHTTP {
 	return &SeekingHTTP{
-		URL:    url,
-		offset: 0,
+		URL:         url,
+		offset:      0,
+		constoffset: 0,
+		constsize:   0,
+	}
+}
+
+// NewWithOffsets initializes a SeekingHTTP for the given URL.
+// The SeekingHTTP.Client field may be set before the first call
+// to Read or Seek.
+func NewWithOffsets(url string, offset, size int64) *SeekingHTTP {
+	return &SeekingHTTP{
+		URL:         url,
+		offset:      0,
+		constoffset: offset,
+		constsize:   size,
 	}
 }
 
@@ -85,6 +101,7 @@ func (s *SeekingHTTP) ReadAt(buf []byte, off int64) (n int, err error) {
 	if s.Logger != nil {
 		s.Logger.Debugf("ReadAt len %v off %v", len(buf), off)
 	}
+	off += s.constoffset
 
 	if off < 0 {
 		return 0, io.EOF
@@ -231,6 +248,9 @@ func (s *SeekingHTTP) Seek(offset int64, whence int) (int64, error) {
 
 // Size uses an HTTP HEAD to find out how many bytes are available in total.
 func (s *SeekingHTTP) Size() (int64, error) {
+	if s.constsize != 0 {
+		return s.constsize, nil
+	}
 	if err := s.init(); err != nil {
 		return 0, err
 	}
@@ -254,4 +274,9 @@ func (s *SeekingHTTP) Size() (int64, error) {
 		s.Logger.Debugf("url: %v, size %v", req.URL.String(), resp.ContentLength)
 	}
 	return resp.ContentLength, nil
+}
+
+// Close implements io.ReadSeekCloser.
+func (s *SeekingHTTP) Close() error {
+	return nil
 }
